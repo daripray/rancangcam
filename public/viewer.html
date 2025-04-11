@@ -45,14 +45,14 @@
         const col = document.createElement('div');
         col.className = 'col-6 col-md-4';
         const statusDot = `<span class="status-dot ${isLive ? 'live' : 'offline'} me-1"></span>`;
-        col.innerHTML = \`
+        col.innerHTML = `
           <div class="card shadow-sm">
             <div class="card-body">
-              <h5 class="card-title">\${statusDot}\${id}</h5>
-              \${latestThumb ? `<img src="\${latestThumb}" class="thumbnail mt-2" data-video="\${latestVideo}" />` : '<p class="text-muted">Belum ada rekaman</p>'}
+              <h5 class="card-title">${statusDot}${id}</h5>
+              ${latestThumb ? `<img src="${latestThumb}" class="thumbnail mt-2" data-video="${latestVideo}" />` : '<p class="text-muted">Belum ada rekaman</p>'}
             </div>
           </div>
-        \`;
+        `;
         cameraList.appendChild(col);
       }
       document.querySelectorAll('.thumbnail').forEach(img => {

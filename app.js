@@ -26,6 +26,10 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 app.post('/upload/:cameraId', upload.fields([{ name: 'video' }, { name: 'thumb' }]), (req, res) => {
+  console.log('Upload success: ');
+  // console.log(req);
+  
+  
   res.send({ message: 'Upload success' });
 });
 

@@ -24,43 +24,48 @@
     let mediaRecorder, cameraId;
 
     form.onsubmit = async (e) => {
-      e.preventDefault();
-      cameraId = document.getElementById('cameraId').value.trim();
-      if (!cameraId) return;
+        e.preventDefault();
+        const button = form.querySelector('button');
+        cameraId = document.getElementById('cameraId').value.trim();
+        if (!cameraId) return;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
+        button.disabled = true;
+        button.innerText = 'Kamera Aktif...';
 
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
 
-      let chunks = [];
-      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
 
-      mediaRecorder.ondataavailable = e => chunks.push(e.data);
-      mediaRecorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        chunks = [];
+        let chunks = [];
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
 
-        const thumbBlob = await new Promise(resolve => {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          ctx.drawImage(video, 0, 0);
-          canvas.toBlob(resolve, 'image/jpeg');
-        });
+        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          chunks = [];
 
-        const formData = new FormData();
-        formData.append('video', blob, 'video.webm');
-        formData.append('thumb', thumbBlob, 'thumb.jpg');
+          const thumbBlob = await new Promise(resolve => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+            canvas.toBlob(resolve, 'image/jpeg');
+          });
 
-        await fetch('/upload/' + cameraId, { method: 'POST', body: formData });
-      };
+          const formData = new FormData();
+          formData.append('video', blob, 'video.webm');
+          formData.append('thumb', thumbBlob, 'thumb.jpg');
 
-      setInterval(() => {
-        if (mediaRecorder.state === 'inactive') mediaRecorder.start();
-        setTimeout(() => mediaRecorder.stop(), 5000);
-      }, 7000);
+          await fetch('/upload/' + cameraId, { method: 'POST', body: formData });
+        };
+
+        setInterval(() => {
+          if (mediaRecorder.state === 'inactive') mediaRecorder.start();
+          setTimeout(() => mediaRecorder.stop(), 5000);
+        }, 7000);
     };
+
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js');

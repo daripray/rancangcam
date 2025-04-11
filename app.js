@@ -38,18 +38,43 @@ app.get('/cameras', (req, res) => {
 
   const now = Date.now();
   const dirs = fs.readdirSync(recordingBase);
+
   const cameras = dirs.map(id => {
     const folder = path.join(recordingBase, id);
-    const files = fs.readdirSync(folder).sort((a, b) => fs.statSync(`${folder}/${b}`).mtimeMs - fs.statSync(`${folder}/${a}`).mtimeMs);
+    const files = fs.readdirSync(folder);
 
-    const latestVideo = files.find(f => f.endsWith('.webm'));
-    const latestThumb = files.find(f => f.endsWith('.jpg'));
-    const videoPath = latestVideo ? `/recording/${id}/${latestVideo}` : null;
-    const thumbPath = latestThumb ? `/recording/${id}/${latestThumb}` : null;
+    const videos = files.filter(f => f.endsWith('.webm')).sort();
+    const thumbs = files.filter(f => f.endsWith('.jpg')).sort();
 
-    const isLive = latestVideo ? (now - fs.statSync(`${folder}/${latestVideo}`).mtimeMs < 60000) : false;
+    const recordings = videos.map(videoFile => {
+      const base = path.basename(videoFile, '.webm');
+      const thumbFile = thumbs.find(t => t.includes(base)) || thumbs[0];
+      return {
+        video: `/recording/${id}/${videoFile}`,
+        thumb: thumbFile ? `/recording/${id}/${thumbFile}` : ''
+      };
+    });
 
-    return { id, latestVideo: videoPath, latestThumb: thumbPath, isLive };
+    const latestRecording = recordings.length ? recordings[recordings.length - 1] : null;
+    const latestVideoFile = latestRecording ? latestRecording.video.split('/').pop() : null;
+    
+ // Debugging log
+if (latestVideoFile) {
+  console.log(`Kamera: ${id}, Modified: ${fs.statSync(path.join(folder, latestVideoFile)).mtimeMs}, Now: ${now}`);
+} else {
+  console.log(`Kamera: ${id} - Tidak ada video terbaru.`);
+}
+
+    const isLive = latestVideoFile
+      ? (now - fs.statSync(path.join(folder, latestVideoFile)).mtimeMs < 15000)
+      : false;
+
+    return {
+      id,
+      thumb: latestRecording ? latestRecording.thumb : '',
+      live: isLive,
+      recordings
+    };
   });
 
   res.json(cameras);

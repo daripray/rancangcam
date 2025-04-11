@@ -1,76 +1,140 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
+
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kamera | Rancang Cam</title>
-  <link rel="manifest" href="manifest.json" />
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="container py-4">
-  <h1 class="mb-4">📷 Kamera Rancang Cam</h1>
-  <form id="cameraForm">
-    <div class="mb-3">
-      <label for="cameraId" class="form-label">Nama Kamera</label>
-      <input type="text" id="cameraId" class="form-control" required>
-    </div>
-    <button type="submit" class="btn btn-primary">Mulai Kamera</button>
-  </form>
-  <video id="preview" autoplay muted playsinline class="w-100 my-3" style="max-height:300px;"></video>
-
+  <title>Camera</title>
+  <link rel="manifest" href="/manifest.json" />
   <script>
-    const form = document.getElementById('cameraForm');
-    const video = document.getElementById('preview');
-    let mediaRecorder, cameraId;
-
-    form.onsubmit = async (e) => {
-        e.preventDefault();
-        const button = form.querySelector('button');
-        cameraId = document.getElementById('cameraId').value.trim();
-        if (!cameraId) return;
-
-        button.disabled = true;
-        button.innerText = 'Kamera Aktif...';
-
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
-
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-
-        let chunks = [];
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-
-        mediaRecorder.ondataavailable = e => chunks.push(e.data);
-        mediaRecorder.onstop = async () => {
-          const blob = new Blob(chunks, { type: 'video/webm' });
-          chunks = [];
-
-          const thumbBlob = await new Promise(resolve => {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
-            canvas.toBlob(resolve, 'image/jpeg');
-          });
-
-          const formData = new FormData();
-          formData.append('video', blob, 'video.webm');
-          formData.append('thumb', thumbBlob, 'thumb.jpg');
-
-          await fetch('/upload/' + cameraId, { method: 'POST', body: formData });
-        };
-
-        setInterval(() => {
-          if (mediaRecorder.state === 'inactive') mediaRecorder.start();
-          setTimeout(() => mediaRecorder.stop(), 5000);
-        }, 7000);
-    };
-
-
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js');
     }
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+
+<body class="container py-4">
+  <h3>Camera</h3>
+  <form id="cameraForm" class="mb-3">
+    <input type="text" class="form-control mb-2" id="cameraId" placeholder="Nama Kamera" required>
+    <button type="submit" class="btn btn-primary" id="toggleBtn">Mulai Kamera</button>
+  </form>
+  <video id="video" autoplay playsinline class="w-100 rounded border"></video>
+
+  <script>
+    console.log('----PERSIAPAN----');
+    let stream, mediaRecorder, motionInterval;
+    let recording = false;
+    let chunks = [];
+    let motionDetected = false;
+    let fiveMinuteLimit = 5 * 60 * 1000;
+    let currentStartTime = 0;
+
+    const video = document.getElementById('video');
+    const form = document.getElementById('cameraForm');
+    const toggleBtn = document.getElementById('toggleBtn');
+
+    console.log('----PERSIAPAN----');
+    
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      if (recording) {
+        stopCamera();
+      } else {
+        await startCamera();
+      }
+    };
+
+    async function startCamera() {
+      const cameraId = document.getElementById('cameraId').value.trim();
+      if (!cameraId) return;
+
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      console.log(`[INFO] Kamera dimulai: ${cameraId}`);
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      let lastImageData;
+
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+
+      mediaRecorder.ondataavailable = (e) => {
+        chunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        console.log('[INFO] Stop recording, menyimpan file...');
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        chunks = [];
+
+        const thumbBlob = await new Promise(resolve => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0);
+          canvas.toBlob(resolve, 'image/jpeg');
+        });
+
+        console.log('[INFO] Thumbnail disimpan.');
+
+        const formData = new FormData();
+        formData.append('video', blob, 'video.webm');
+        formData.append('thumb', thumbBlob, 'thumb.jpg');
+
+        await fetch('/upload/' + cameraId, { method: 'POST', body: formData });
+        console.log('[INFO] Video & thumbnail diupload ke server.');
+
+        if (recording) {
+          currentStartTime = Date.now();
+          mediaRecorder.start();
+          console.log('[INFO] Mulai rekaman ulang karena recording masih aktif.');
+        }
+      };
+
+      motionInterval = setInterval(() => {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        if (lastImageData) {
+          let diff = 0;
+          for (let i = 0; i < imageData.data.length; i += 4) {
+            diff += Math.abs(imageData.data[i] - lastImageData.data[i]);
+          }
+          motionDetected = diff > 1000000;
+        }
+        lastImageData = imageData;
+
+        if (motionDetected) {
+          console.log('[INFO] Motion terdeteksi!');
+          if (mediaRecorder.state === 'inactive') {
+            currentStartTime = Date.now();
+            mediaRecorder.start();
+            console.log('[INFO] Mulai merekam karena motion terdeteksi.');
+          } else if (Date.now() - currentStartTime >= fiveMinuteLimit) {
+            mediaRecorder.stop();
+            console.log('[INFO] Stop recording karena sudah 5 menit.');
+          }
+        }
+      }, 1000);
+
+      recording = true;
+      toggleBtn.textContent = 'Stop Kamera';
+    }
+
+    function stopCamera() {
+      console.log('[INFO] Kamera dimatikan.');
+      stream.getTracks().forEach(track => track.stop());
+      clearInterval(motionInterval);
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        console.log('[INFO] Stop recording saat kamera dihentikan.');
+      }
+      recording = false;
+      toggleBtn.textContent = 'Mulai Kamera';
+    }
+  </script>
 </body>
+
 </html>

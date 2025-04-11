@@ -1,30 +1,25 @@
-
-const CACHE_NAME = "rancang-cam-cache-v1";
-const urlsToCache = [
-  "/",
-  "/camera.html",
-  "/viewer.html",
-  "/manifest.json",
-  "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css",
-  "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
-];
-
-self.addEventListener("install", event => {
+self.addEventListener('install', function (event) {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
+    caches.open('rancangcam-v1').then(function (cache) {
+      return cache.addAll([
+        '/camera.html',
+        '/viewer.html',
+        '/manifest.json',
+        '/icon-192.png',
+        '/icon-512.png',
+        'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css',
+        'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js'
+      ]).catch(err => {
+        console.error('Cache addAll failed:', err);
+      });
+    })
   );
 });
 
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
-  );
-});
-
-self.addEventListener("fetch", event => {
+self.addEventListener('fetch', function (event) {
   event.respondWith(
-    caches.match(event.request).then(response => response || fetch(event.request))
+    caches.match(event.request).then(function (response) {
+      return response || fetch(event.request);
+    })
   );
 });

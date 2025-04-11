@@ -22,23 +22,21 @@
   <video id="video" autoplay playsinline class="w-100 rounded border"></video>
 
   <script>
-    console.log('----PERSIAPAN----');
     let stream, mediaRecorder, motionInterval;
     let recording = false;
+    let cameraActive = false;
     let chunks = [];
     let motionDetected = false;
-    let fiveMinuteLimit = 5 * 60 * 1000;
+    const fiveMinuteLimit = 60 * 1000;
     let currentStartTime = 0;
 
     const video = document.getElementById('video');
     const form = document.getElementById('cameraForm');
     const toggleBtn = document.getElementById('toggleBtn');
 
-    console.log('----PERSIAPAN----');
-    
     form.onsubmit = async (e) => {
       e.preventDefault();
-      if (recording) {
+      if (cameraActive) {
         stopCamera();
       } else {
         await startCamera();
@@ -49,90 +47,107 @@
       const cameraId = document.getElementById('cameraId').value.trim();
       if (!cameraId) return;
 
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-      console.log(`[INFO] Kamera dimulai: ${cameraId}`);
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        video.play();
+        console.log(`[INFO] Kamera dimulai: ${cameraId}`);
+        cameraActive = true;
+        toggleBtn.textContent = 'Stop Kamera';
+        toggleBtn.classList.remove('btn-primary');
+        toggleBtn.classList.add('btn-danger');
 
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      let lastImageData;
 
-      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        let lastImageData;
 
-      mediaRecorder.ondataavailable = (e) => {
-        chunks.push(e.data);
-      };
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
 
-      mediaRecorder.onstop = async () => {
-        console.log('[INFO] Stop recording, menyimpan file...');
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        chunks = [];
+        mediaRecorder.ondataavailable = (e) => {
+          chunks.push(e.data);
+        };
 
-        const thumbBlob = await new Promise(resolve => {
+        mediaRecorder.onstop = async () => {
+          console.log('[INFO] Stop recording, menyimpan file...');
+          const timestamp = Date.now();
+          const blob = new Blob(chunks, { type: 'video/webm' });
+          chunks = [];
+
+          const thumbBlob = await new Promise(resolve => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            ctx.drawImage(video, 0, 0);
+            canvas.toBlob(resolve, 'image/jpeg');
+          });
+
+          console.log('[INFO] Thumbnail disimpan.');
+
+          const formData = new FormData();
+          formData.append('video', blob, `${timestamp}.webm`);
+          formData.append('thumb', thumbBlob, `${timestamp}.jpg`);
+
+          await fetch('/upload/' + cameraId, { method: 'POST', body: formData });
+          console.log('[INFO] Video & thumbnail diupload ke server.');
+
+          if (recording) {
+            currentStartTime = Date.now();
+            mediaRecorder.start();
+            console.log('[INFO] Mulai rekaman ulang karena recording masih aktif.');
+          }
+        };
+
+        motionInterval = setInterval(() => {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           ctx.drawImage(video, 0, 0);
-          canvas.toBlob(resolve, 'image/jpeg');
-        });
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-        console.log('[INFO] Thumbnail disimpan.');
-
-        const formData = new FormData();
-        formData.append('video', blob, 'video.webm');
-        formData.append('thumb', thumbBlob, 'thumb.jpg');
-
-        await fetch('/upload/' + cameraId, { method: 'POST', body: formData });
-        console.log('[INFO] Video & thumbnail diupload ke server.');
-
-        if (recording) {
-          currentStartTime = Date.now();
-          mediaRecorder.start();
-          console.log('[INFO] Mulai rekaman ulang karena recording masih aktif.');
-        }
-      };
-
-      motionInterval = setInterval(() => {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-        if (lastImageData) {
-          let diff = 0;
-          for (let i = 0; i < imageData.data.length; i += 4) {
-            diff += Math.abs(imageData.data[i] - lastImageData.data[i]);
+          if (lastImageData) {
+            let diff = 0;
+            for (let i = 0; i < imageData.data.length; i += 4) {
+              diff += Math.abs(imageData.data[i] - lastImageData.data[i]);
+            }
+            motionDetected = diff > 1000000;
           }
-          motionDetected = diff > 1000000;
-        }
-        lastImageData = imageData;
+          lastImageData = imageData;
 
-        if (motionDetected) {
-          console.log('[INFO] Motion terdeteksi!');
-          if (mediaRecorder.state === 'inactive') {
-            currentStartTime = Date.now();
-            mediaRecorder.start();
-            console.log('[INFO] Mulai merekam karena motion terdeteksi.');
-          } else if (Date.now() - currentStartTime >= fiveMinuteLimit) {
-            mediaRecorder.stop();
-            console.log('[INFO] Stop recording karena sudah 5 menit.');
+          if (motionDetected) {
+            console.log('[INFO] Motion terdeteksi!');
+            if (mediaRecorder.state === 'inactive') {
+              currentStartTime = Date.now();
+              mediaRecorder.start();
+              console.log('[INFO] Mulai merekam karena motion terdeteksi.');
+            } else if (Date.now() - currentStartTime >= fiveMinuteLimit) {
+              mediaRecorder.stop();
+              console.log('[INFO] Stop recording karena sudah 1 menit.');
+            }
           }
-        }
-      }, 1000);
+        }, 1000);
 
-      recording = true;
-      toggleBtn.textContent = 'Stop Kamera';
+        recording = true;
+      } catch (err) {
+        console.error('[ERROR] Tidak bisa mengakses kamera:', err);
+        alert('Tidak bisa mengakses kamera.');
+      }
     }
 
     function stopCamera() {
       console.log('[INFO] Kamera dimatikan.');
-      stream.getTracks().forEach(track => track.stop());
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
       clearInterval(motionInterval);
       if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
         console.log('[INFO] Stop recording saat kamera dihentikan.');
       }
       recording = false;
+      cameraActive = false;
       toggleBtn.textContent = 'Mulai Kamera';
+      toggleBtn.classList.remove('btn-danger');
+      toggleBtn.classList.add('btn-primary');
+
     }
   </script>
 </body>

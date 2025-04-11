@@ -1,83 +1,120 @@
-
 const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+
 const app = express();
+const port = process.env.PORT || 3000;
 
-const PORT = process.env.PORT || 3000;
-const recordingBase = path.join(__dirname, 'recording');
+app.use(express.static('public')); // Sajikan file statis dari /public
+app.use('/recordings', express.static(path.join(__dirname, 'recordings')));
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/recording', express.static(recordingBase));
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(recordingBase, req.params.cameraId);
-    fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}${ext}`);
-  }
-});
-const upload = multer({ storage });
-
-app.post('/upload/:cameraId', upload.fields([{ name: 'video' }, { name: 'thumb' }]), (req, res) => {
-  console.log('Upload success: ');
-  // console.log(req);
-  
-  
-  res.send({ message: 'Upload success' });
+// Routing langsung tanpa .html
+app.get('/camera', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'camera.html'));
 });
 
+app.get('/viewer', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
+});
+
+// Konfigurasi upload folder dinamis
+app.post('/upload/:id', (req, res, next) => {
+  req.timestamp = Date.now();
+  next();
+}, multer({
+  storage: multer.diskStorage({
+    destination: function (req, file, cb) {
+      const cameraId = req.params.id;
+      const folder = path.join(__dirname, 'recordings', cameraId);
+      fs.mkdirSync(folder, { recursive: true });
+      cb(null, folder);
+    },
+    filename: function (req, file, cb) {
+      const ext = path.extname(file.originalname);
+      const name = `${req.timestamp}${ext}`;
+      cb(null, name);
+    }
+  })
+}).fields([
+  { name: 'video', maxCount: 1 },
+  { name: 'thumb', maxCount: 1 }
+]), (req, res) => {
+  res.json({ status: 'success' });
+});
+
+
+// API untuk viewer
 app.get('/cameras', (req, res) => {
-  if (!fs.existsSync(recordingBase)) return res.json([]);
+  const basePath = path.join(__dirname, 'recordings');
+  const cameras = [];
 
-  const now = Date.now();
-  const dirs = fs.readdirSync(recordingBase);
+  if (fs.existsSync(basePath)) {
+    fs.readdirSync(basePath).forEach(cameraId => {
+      const folder = path.join(basePath, cameraId);
+      if (!fs.statSync(folder).isDirectory()) return;
 
-  const cameras = dirs.map(id => {
-    const folder = path.join(recordingBase, id);
-    const files = fs.readdirSync(folder);
+      const files = fs.readdirSync(folder);
+      const recordings = [];
 
-    const videos = files.filter(f => f.endsWith('.webm')).sort();
-    const thumbs = files.filter(f => f.endsWith('.jpg')).sort();
+      let thumb = null;
+      let lastVideoTime = 0;
 
-    const recordings = videos.map(videoFile => {
-      const base = path.basename(videoFile, '.webm');
-      const thumbFile = thumbs.find(t => t.includes(base)) || thumbs[0];
-      return {
-        video: `/recording/${id}/${videoFile}`,
-        thumb: thumbFile ? `/recording/${id}/${thumbFile}` : ''
-      };
+      files.forEach(file => {
+        const ext = path.extname(file);
+        const baseName = path.basename(file, ext);
+
+        if (ext === '.webm') {
+          const time = parseInt(baseName);
+          const thumbFile = files.find(f => f === `${time}.jpg`);
+
+          console.log(`→ file: ${file}`);
+          // console.log(`→ timeStr: ${timeStr}`);
+          console.log(`→ time: ${time}`);
+          console.log(`→ expected thumb: ${time}.jpg`);
+          console.log(`→ found thumb: ${thumbFile}`);
+
+          if (thumbFile) {
+            recordings.push({
+              video: `/recordings/${cameraId}/${file}`,
+              thumb: `/recordings/${cameraId}/${thumbFile}`
+            });
+
+            if (time > lastVideoTime) {
+              lastVideoTime = time;
+              thumb = `/recordings/${cameraId}/${thumbFile}`;
+            }
+          }
+        }
+      });
+
+      recordings.sort((a, b) => {
+        const at = parseInt(a.video.match(/(\d+)\.webm/)[1]);
+        const bt = parseInt(b.video.match(/(\d+)\.webm/)[1]);
+        return bt - at;
+      });
+
+      const isLive = Date.now() - lastVideoTime < 30 * 1000;
+
+      cameras.push({
+        basePath: basePath,
+        folder: folder,
+        id: cameraId,
+        live: isLive,
+        thumb,
+        recordings
+      });
     });
+  }
 
-    const latestRecording = recordings.length ? recordings[recordings.length - 1] : null;
-    const latestVideoFile = latestRecording ? latestRecording.video.split('/').pop() : null;
-    
- // Debugging log
-if (latestVideoFile) {
-  console.log(`Kamera: ${id}, Modified: ${fs.statSync(path.join(folder, latestVideoFile)).mtimeMs}, Now: ${now}`);
-} else {
-  console.log(`Kamera: ${id} - Tidak ada video terbaru.`);
-}
-
-    const isLive = latestVideoFile
-      ? (now - fs.statSync(path.join(folder, latestVideoFile)).mtimeMs < 15000)
-      : false;
-
-    return {
-      id,
-      thumb: latestRecording ? latestRecording.thumb : '',
-      live: isLive,
-      recordings
-    };
-  });
+  console.log('[API /cameras] Mengirim data kamera:');
+  console.dir(cameras, { depth: null });
 
   res.json(cameras);
 });
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
+// Jalankan server
+app.listen(port, () => {
+  console.log(`Server berjalan di http://localhost:${port}`);
+});

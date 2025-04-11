@@ -16,8 +16,8 @@
   <style>
     .thumb-wrap {
       position: relative;
-      text-align: center;
-      margin-bottom: 10px;
+      margin: 0.5rem;
+      cursor: pointer;
     }
 
     .thumb-time {
@@ -31,12 +31,31 @@
       border-radius: 4px;
     }
 
+    .camera-box {
+      margin-bottom: 2rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+
+    .camera-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.5rem;
+    }
+
+    .thumb-list {
+      display: flex;
+      flex-wrap: wrap;
+    }
+
   </style>
 </head>
 
 <body class="p-3">
   <h2>Daftar Kamera</h2>
-  <div id="camera-list" class="accordion"></div>
+  <div id="camera-list"></div>
 
   <!-- Modal player -->
   <div class="modal fade" id="videoModal" tabindex="-1">
@@ -54,42 +73,47 @@
       const res = await fetch('/cameras');
       const data = await res.json();
 
+      console.log('[Viewer] Data kamera diterima:', data); // Tambahan log
+
       const container = document.getElementById('camera-list');
       container.innerHTML = '';
 
-      data.forEach((cam, index) => {
-        const collapseId = `collapse${index}`;
-        const card = document.createElement('div');
-        card.className = 'accordion-item collapse show';
+      data.forEach(cam => {
+        const box = document.createElement('div');
+        box.className = 'camera-box';
 
-        card.innerHTML = `
-          <h2 class="accordion-header">
-            <button class="accordion-button collapsed d-flex justify-content-between align-items-center" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}">
-              <div class="me-auto">
-                ${cam.id} ${cam.live ? '<span class="badge text-bg-danger ms-2">LIVE</span>' : ''}
-              </div>
-              ${cam.thumb ? `<img src="${cam.thumb}" alt="thumb" height="40" class="ms-2">` : ''}
-            </button>
-          </h2>
-          <div id="${collapseId}" class="accordion-collapse collapse show">
-            <div class="accordion-body d-flex flex-wrap gap-3">
-              ${cam.recordings.map(rec => {
-          const timestamp = new Date(
-            parseInt(rec.video.match(/(\d+)\.webm/)[1])
-          );
-          const timeStr = timestamp.toLocaleString('id-ID');
-          return `
-                  <div class="thumb-wrap">
-                    <img src="${rec.thumb}" alt="thumb" width="160" role="button" onclick="playVideo('${rec.video}')">
-                    <div class="thumb-time">${timeStr}</div>
-                  </div>
-                `;
-        }).join('')}
-            </div>
-          </div>
+        const header = document.createElement('div');
+        header.className = 'camera-header';
+
+        const title = document.createElement('div');
+        title.innerHTML = `<strong>${cam.id}</strong> ${cam.live ? '<span class="badge text-bg-danger ms-2">Online</span>' : '<span class="badge text-muted ms-2">Offline</span>'}`;
+
+        const thumbImg = cam.thumb ? `<img src="${cam.thumb}" alt="thumb" height="40" class="rounded">` : '';
+
+        header.innerHTML = `
+          <div class="me-auto">${title.innerHTML}</div>
+          ${thumbImg}
         `;
 
-        container.appendChild(card);
+        const thumbs = document.createElement('div');
+        thumbs.className = 'thumb-list';
+
+        cam.recordings.forEach(rec => {
+          const timestamp = new Date(parseInt(rec.video.match(/(\d+)\.webm/)[1]));
+          const timeStr = timestamp.toLocaleString('id-ID');
+
+          const thumb = document.createElement('div');
+          thumb.className = 'thumb-wrap';
+          thumb.innerHTML = `
+            <img src="${rec.thumb}" alt="thumb" width="160" class="rounded shadow-sm" onclick="playVideo('${rec.video}')">
+            <div class="thumb-time">${timeStr}</div>
+          `;
+          thumbs.appendChild(thumb);
+        });
+
+        box.appendChild(header);
+        box.appendChild(thumbs);
+        container.appendChild(box);
       });
     }
 
@@ -101,7 +125,7 @@
     }
 
     loadCameras();
-    setInterval(loadCameras, 15000); // auto refresh 15 detik
+    setInterval(loadCameras, 15000);
   </script>
 </body>
 
